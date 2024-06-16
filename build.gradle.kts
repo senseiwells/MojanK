@@ -1,6 +1,3 @@
-// import org.apache.commons.io.output.ByteArrayOutputStream
-// import java.nio.charset.Charset
-
 plugins {
     kotlin("jvm") version "1.9.24"
     kotlin("plugin.serialization") version "1.9.24"
@@ -9,7 +6,7 @@ plugins {
 }
 
 group = "me.senseiwells"
-version = "1.0.0"
+version = "1.0.1"
 
 kotlin.explicitApi()
 
@@ -36,6 +33,10 @@ tasks.compileKotlin {
     kotlinOptions.jvmTarget = "17"
 }
 
+tasks.compileTestKotlin {
+    kotlinOptions.jvmTarget = "17"
+}
+
 publishing {
     publications {
         create<MavenPublication>("maven") {
@@ -54,12 +55,3 @@ publishing {
 tasks.test {
     useJUnitPlatform()
 }
-
-// fun getGitHash(): String {
-//     val out = ByteArrayOutputStream()
-//     exec {
-//         commandLine("git", "rev-parse", "HEAD")
-//         standardOutput = out
-//     }
-//     return out.toString(Charset.defaultCharset()).trim()
-// }

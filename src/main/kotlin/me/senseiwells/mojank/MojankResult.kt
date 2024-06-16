@@ -28,12 +28,26 @@ public sealed class MojankResult<T: Any> {
     public abstract val isPartial: Boolean
 
     /**
+     * Whether the result is conclusive, and will definitely
+     * produce the same result if the api is called again.
+     */
+    public abstract val isConclusive: Boolean
+
+    /**
      * Whether the result was at least a partial success.
      *
      * This indicates you can call [get] without fault.
      */
     public val isSuccessOrPartial: Boolean
         get() = isSuccess || isPartial
+
+    /**
+     * Whether the result was a failure.
+     *
+     * This indicates you can call [into] without fault.
+     */
+    public val isFailure: Boolean
+        get() = !this.isSuccessOrPartial
 
     /**
      * Tries to get the value wrapped in the result.
@@ -86,11 +100,11 @@ public sealed class MojankResult<T: Any> {
      */
     public fun <S: Any> map(mapper: (T) -> S): MojankResult<S> {
         return if (isSuccess) {
-            success(mapper(get()))
+            Success(mapper(get()))
         } else if (isPartial) {
-            partial(mapper(get()), getReason())
+            Partial(mapper(get()), getReason(), isConclusive)
         } else {
-            failure(getReason(), getException())
+            Failure(getReason(), getException(), isConclusive)
         }
     }
 
@@ -129,6 +143,8 @@ public sealed class MojankResult<T: Any> {
         }
     }
 
+    public abstract fun <S: Any> into(): MojankResult<S>
+
     public companion object {
         /**
          * Creates a successful result.
@@ -145,10 +161,11 @@ public sealed class MojankResult<T: Any> {
          *
          * @param value The value to wrap.
          * @param reason The reason for the partial result.
+         * @param conclusive Whether the result was conclusive.
          * @return The partial result.
          */
-        public fun <T: Any> partial(value: T, reason: String): MojankResult<T> {
-            return Partial(value, reason)
+        public fun <T: Any> partial(value: T, reason: String, conclusive: Boolean): MojankResult<T> {
+            return Partial(value, reason, conclusive)
         }
 
         /**
@@ -158,8 +175,19 @@ public sealed class MojankResult<T: Any> {
          * @param error The exception that occurred.
          * @return The failed result.
          */
-        public fun <T: Any> failure(reason: String, error: Throwable? = null): MojankResult<T> {
-            return Failure(reason, error)
+        public fun <T: Any> failure(reason: String, error: Throwable): MojankResult<T> {
+            return Failure(reason, error, false)
+        }
+
+        /**
+         * Creates a failed result.
+         *
+         * @param reason The reason for the failure.
+         * @param conclusive Whether the result was conclusive.
+         * @return The failed result.
+         */
+        public fun <T: Any> failure(reason: String, conclusive: Boolean): MojankResult<T> {
+            return Failure(reason, null, conclusive)
         }
 
         /**
@@ -170,14 +198,15 @@ public sealed class MojankResult<T: Any> {
          *  if null, a successful result will be created instead.
          * @return The successful or partial result.
          */
-        public fun <T: Any> successOrPartial(value: T, reason: String?): MojankResult<T> {
-            return if (reason == null) success(value) else partial(value, reason)
+        public fun <T: Any> successOrPartial(value: T, reason: String?, conclusive: Boolean): MojankResult<T> {
+            return if (reason == null) success(value) else partial(value, reason, conclusive)
         }
     }
 
     private class Success<T: Any>(private val value: T): MojankResult<T>() {
         override val isSuccess: Boolean get() = true
         override val isPartial: Boolean get() = false
+        override val isConclusive: Boolean get() = true
 
         override fun get(): T {
             return value
@@ -195,12 +224,20 @@ public sealed class MojankResult<T: Any> {
             return null
         }
 
+        override fun <S: Any> into(): MojankResult<S> {
+            throw IllegalArgumentException("Cannot cast successful result")
+        }
+
         override fun toString(): String {
             return "SuccessfulMojankResult(value=$value)"
         }
     }
 
-    private class Partial<T: Any>(private val value: T, private val reason: String): MojankResult<T>() {
+    private class Partial<T: Any>(
+        private val value: T,
+        private val reason: String,
+        override val isConclusive: Boolean
+    ): MojankResult<T>() {
         override val isSuccess: Boolean get() = false
         override val isPartial: Boolean get() = true
 
@@ -220,12 +257,20 @@ public sealed class MojankResult<T: Any> {
             return null
         }
 
+        override fun <S: Any> into(): MojankResult<S> {
+            throw IllegalArgumentException("Cannot cast partial result")
+        }
+
         override fun toString(): String {
             return "PartialMojankResult(value=$value, reason=$reason)"
         }
     }
 
-    private class Failure<T: Any>(private val reason: String, private val error: Throwable?): MojankResult<T>() {
+    private class Failure<T: Any>(
+        private val reason: String,
+        private val error: Throwable?,
+        override val isConclusive: Boolean
+    ): MojankResult<T>() {
         override val isSuccess: Boolean get() = false
         override val isPartial: Boolean get() = false
 
@@ -243,6 +288,10 @@ public sealed class MojankResult<T: Any> {
 
         override fun getException(): Throwable? {
             return error
+        }
+
+        override fun <S: Any> into(): MojankResult<S> {
+            return Failure(reason, error, isConclusive)
         }
 
         override fun toString(): String {

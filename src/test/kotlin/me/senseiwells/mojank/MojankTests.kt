@@ -49,7 +49,7 @@ class MojankTests {
         @Test
         fun `with invalid username`() = runTest {
             val result = Mojank.usernameToSimpleProfile(spaceship.name)
-            assert(!result.isSuccessOrPartial)
+            assert(result.isFailure && result.isConclusive)
         }
     }
 
@@ -65,13 +65,13 @@ class MojankTests {
         @Test
         fun `with valid and invalid usernames`() = runTest {
             val result = Mojank.usernamesToSimpleProfiles(listOf(sensei.name, spaceship.name))
-            assert(result.isPartial && result.get().size == 1 && result.get().first() == sensei)
+            assert(result.isPartial && result.get().size == 1 && result.get().first() == sensei && result.isConclusive)
         }
 
         @Test
         fun `with invalid usernames`() = runTest {
             val result = Mojank.usernamesToSimpleProfiles(listOf(spaceship.name, happy.name))
-            assert(!result.isSuccessOrPartial)
+            assert(result.isFailure && result.isConclusive)
         }
 
         @Test
@@ -93,7 +93,17 @@ class MojankTests {
         @Test
         fun `with invalid username`() = runTest {
             val result = Mojank.uuidToProfile(spaceship.id)
-            assert(!result.isSuccessOrPartial)
+            assert(!result.isSuccessOrPartial && result.isConclusive)
+        }
+    }
+
+    @Nested
+    @DisplayName("Test attempts")
+    inner class AttemptTests {
+        @Test
+        fun `with username request`() = runTest {
+            val result = Mojank.attempt { usernameToUUID(sensei.name) }
+            assert(result.isSuccess && result.get() == sensei.id)
         }
     }
 }

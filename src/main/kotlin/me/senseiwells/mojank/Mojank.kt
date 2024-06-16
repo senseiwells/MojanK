@@ -44,6 +44,27 @@ import kotlin.time.Duration.Companion.minutes
  */
 public open class Mojank(private val client: HttpClient = HttpClient(CIO)) {
     /**
+     * Attempts an action a given number of times until the
+     * result is conclusive.
+     * This should be used when trying to avoid errors that
+     * result in inconclusive results, e.i.
+     * Mojang server's being down.
+     *
+     * @param attempts The max number of attempts to run the action.
+     * @param action The action to run.
+     * @return The result of the actions.
+     */
+    public inline fun <T: Any> attempt(attempts: Int = 3, action: Mojank.() -> MojankResult<T>): MojankResult<T> {
+        repeat(attempts - 1) {
+            val result = action.invoke(this)
+            if (result.isConclusive) {
+                return result
+            }
+        }
+        return action.invoke(this)
+    }
+
+    /**
      * Tries to fetch the [UUID] from a player's [username], case-insensitive.
      *
      * This method will return a successful result if the
@@ -68,18 +89,8 @@ public open class Mojank(private val client: HttpClient = HttpClient(CIO)) {
      * @see SimpleMojankProfile
      */
     public open suspend fun usernameToSimpleProfile(username: String): MojankResult<SimpleMojankProfile> {
-        try {
-            val response = client.get("https://api.mojang.com/users/profiles/minecraft/$username")
-            if (response.status == HttpStatusCode.OK) {
-                return MojankResult.success(response.body())
-            } else if (response.status == HttpStatusCode.NoContent) {
-                return MojankResult.failure("Couldn't find any profile with that name")
-            }
-            return MojankResult.failure(response.body<MojankError>().errorMessage)
-        } catch (e: IOException) {
-            return MojankResult.failure("Failed to decode response body", e)
-        } catch (e: UnresolvedAddressException) {
-            return MojankResult.failure("Failed to resolve address", e)
+        return request("Couldn't find any profile with that name") {
+            client.get("https://api.mojang.com/users/profiles/minecraft/$username")
         }
     }
 
@@ -112,18 +123,20 @@ public open class Mojank(private val client: HttpClient = HttpClient(CIO)) {
 
         val profiles = ArrayList<SimpleMojankProfile>()
         var message: String? = null
+        var conclusive = true
         for (result in deferred.awaitAll()) {
             if (!result.isSuccess) {
                 message = result.getReason()
+                conclusive = conclusive and result.isConclusive
                 continue
             }
             profiles.addAll(result.get())
         }
 
         if (profiles.isEmpty()) {
-            return MojankResult.failure(message!!)
+            return MojankResult.failure(message!!, conclusive)
         }
-        return MojankResult.successOrPartial(profiles, message)
+        return MojankResult.successOrPartial(profiles, message, conclusive)
     }
 
     /**
@@ -138,8 +151,8 @@ public open class Mojank(private val client: HttpClient = HttpClient(CIO)) {
      */
     public open suspend fun usernameToProfile(username: String): MojankResult<MojankProfile> {
         val result = usernameToUUID(username)
-        result.ifFailure { reason, exception ->
-            return MojankResult.failure(reason, exception)
+        if (result.isFailure) {
+            return result.into()
         }
 
         return uuidToProfile(result.get())
@@ -169,18 +182,8 @@ public open class Mojank(private val client: HttpClient = HttpClient(CIO)) {
      * @see MojankProfile
      */
     public open suspend fun uuidToProfile(uuid: UUID): MojankResult<MojankProfile> {
-        try {
-            val response = client.get("https://sessionserver.mojang.com/session/minecraft/profile/$uuid?unsigned=false")
-            if (response.status == HttpStatusCode.OK) {
-                return MojankResult.success(response.body())
-            } else if (response.status == HttpStatusCode.NoContent) {
-                return MojankResult.failure("Couldn't find any profile with that uuid")
-            }
-            return MojankResult.failure(response.body<MojankError>().errorMessage)
-        } catch (e: IOException) {
-            return MojankResult.failure("Failed to decode response body", e)
-        } catch (e: UnresolvedAddressException) {
-            return MojankResult.failure("Failed to resolve address", e)
+        return request("Couldn't find any profile with that uuid") {
+            client.get("https://sessionserver.mojang.com/session/minecraft/profile/$uuid?unsigned=false")
         }
     }
 
@@ -189,23 +192,44 @@ public open class Mojank(private val client: HttpClient = HttpClient(CIO)) {
         if (usernames.isEmpty()) {
             return MojankResult.success(listOf())
         }
-
-        try {
-            val response = client.post("https://api.minecraftservices.com/minecraft/profile/lookup/bulk/byname") {
-                contentType(ContentType.Application.Json)
-                setBody(Json.encodeToString(usernames))
-            }
-            if (response.status == HttpStatusCode.OK) {
-                val profiles = response.body<List<SimpleMojankProfile>>()
+        return request<List<SimpleMojankProfile>>(
+            "Couldn't find any profiles with those names",
+            handler = { profiles ->
                 if (profiles.isEmpty()) {
-                    return MojankResult.failure("Couldn't resolve profiles for all names")
+                    MojankResult.failure("Couldn't resolve profiles for all names", true)
+                } else if (profiles.size != usernames.size) {
+                    MojankResult.partial(profiles, "Couldn't resolve profiles for all names", true)
+                } else {
+                    MojankResult.success(profiles)
                 }
-                if (profiles.size != usernames.size) {
-                    return MojankResult.partial(profiles, "Couldn't resolve profiles for all names")
+            },
+            request = {
+                client.post("https://api.minecraftservices.com/minecraft/profile/lookup/bulk/byname") {
+                    contentType(ContentType.Application.Json)
+                    setBody(Json.encodeToString(usernames))
                 }
-                return MojankResult.success(profiles)
             }
-            return MojankResult.failure(response.body<MojankError>().errorMessage)
+        )
+    }
+
+    private suspend inline fun <reified T: Any> request(
+        invalid: String,
+        handler: (T) -> MojankResult<T> = { value -> MojankResult.success(value) },
+        request: () -> HttpResponse,
+    ): MojankResult<T> {
+        try {
+            val response = request.invoke()
+            if (response.status == HttpStatusCode.NoContent) {
+                return MojankResult.failure(invalid, true)
+            }
+            // Sometimes Mojang decides to return HTML when their servers are down
+            if (response.contentType() == ContentType.Application.Json) {
+                if (response.status == HttpStatusCode.OK) {
+                    return handler.invoke(response.body<T>())
+                }
+                return MojankResult.failure(response.body<MojankError>().errorMessage, true)
+            }
+            return MojankResult.failure("Service unavailable", false)
         } catch (e: IOException) {
             return MojankResult.failure("Failed to decode response body", e)
         } catch (e: UnresolvedAddressException) {
@@ -257,7 +281,7 @@ public open class CachedMojank(duration: Duration = 20.minutes, client: HttpClie
         }
 
         val result = super.usernameToSimpleProfile(username)
-        if (result.getException() == null) {
+        if (result.isConclusive) {
             usernameToSimpleProfile.put(username.lowercase(), result)
         }
         return result
@@ -282,18 +306,18 @@ public open class CachedMojank(duration: Duration = 20.minutes, client: HttpClie
         }
 
         if (unknown.isEmpty()) {
-            return MojankResult.successOrPartial(known, message)
+            return MojankResult.successOrPartial(known, message, true)
         }
 
         val result = super.usernamesToSimpleProfiles(unknown)
         if (!result.isSuccess) {
             message = result.getReason()
             if (!result.isPartial && known.isEmpty()) {
-                return MojankResult.failure(result.getReason(), result.getException())
+                return result
             }
         }
         known.addAll(result.getOrElse { listOf() })
-        return MojankResult.successOrPartial(known, message)
+        return MojankResult.successOrPartial(known, message, result.isConclusive)
     }
 
     override suspend fun usernameToProfile(username: String): MojankResult<MojankProfile> {
@@ -304,7 +328,7 @@ public open class CachedMojank(duration: Duration = 20.minutes, client: HttpClie
         }
 
         val result = super.usernameToProfile(username)
-        if (result.getException() == null) {
+        if (result.isConclusive) {
             usernameToProfile.put(normalized, result)
         }
         result.ifSuccess { profile ->
@@ -320,7 +344,7 @@ public open class CachedMojank(duration: Duration = 20.minutes, client: HttpClie
         }
 
         val result = super.uuidToProfile(uuid)
-        if (result.getException() == null) {
+        if (result.isConclusive) {
             uuidToProfile.put(uuid, result)
         }
         result.ifSuccess { profile ->
