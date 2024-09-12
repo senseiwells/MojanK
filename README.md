@@ -8,11 +8,11 @@ You can add MojanK by adding the following to your `build.gradle.kts`:
 
 ```kts
 repositories {
-    maven("https://jitpack.io")
+    maven("https://maven.supersanta.me/snapshots")
 }
 
 dependencies {
-    implementation("com.github.senseiwells:Mojank:1.0.0")
+    implementation("me.senseiwells:mojank:1.0.1")
 }
 ```
 
