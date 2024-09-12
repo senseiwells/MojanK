@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "me.senseiwells"
-version = "1.0.1"
+version = "1.0.2"
 
 kotlin.explicitApi()
 
@@ -26,14 +26,6 @@ dependencies {
 
     testImplementation(kotlin("test"))
     testImplementation(libs.coroutines.test)
-}
-
-tasks.compileKotlin {
-    kotlinOptions.jvmTarget = "17"
-}
-
-tasks.compileTestKotlin {
-    kotlinOptions.jvmTarget = "17"
 }
 
 publishing {
