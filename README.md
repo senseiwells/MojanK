@@ -12,7 +12,7 @@ repositories {
 }
 
 dependencies {
-    implementation("me.senseiwells:mojank:1.0.2")
+    implementation("me.senseiwells:mojank:1.0.3")
 }
 ```
 
