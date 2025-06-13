@@ -16,6 +16,8 @@ class MojankTests {
     private lateinit var spaceship: SimpleMojankProfile
     private lateinit var happy: SimpleMojankProfile
 
+    private lateinit var mojank: Mojank
+
     @BeforeTest
     fun beforeTests() {
         sensei = SimpleMojankProfile(
@@ -35,6 +37,7 @@ class MojankTests {
             UUID.fromString("11111111-1111-1111-1111-111111111111"),
             "!^_^!"
         )
+        mojank = Mojank(endpoints = MojankEndpoints.ALTERNATE)
     }
 
     @Nested
@@ -42,13 +45,13 @@ class MojankTests {
     inner class UsernameToSimpleProfileTests {
         @Test
         fun `with valid username`() = runTest {
-            val result = Mojank.usernameToSimpleProfile(sensei.name)
+            val result = mojank.usernameToSimpleProfile(sensei.name)
             assert(result.isSuccess && result.get() == sensei)
         }
 
         @Test
         fun `with invalid username`() = runTest {
-            val result = Mojank.usernameToSimpleProfile(spaceship.name)
+            val result = mojank.usernameToSimpleProfile(spaceship.name)
             assert(result.isFailure && result.isConclusive)
         }
     }
@@ -58,25 +61,25 @@ class MojankTests {
     inner class UsernamesToSimpleProfilesTest {
         @Test
         fun `with valid usernames`() = runTest {
-            val result = Mojank.usernamesToSimpleProfiles(listOf(sensei.name, santa.name))
+            val result = mojank.usernamesToSimpleProfiles(listOf(sensei.name, santa.name))
             assert(result.isSuccess && result.get().containsAll(listOf(sensei, santa)))
         }
 
         @Test
         fun `with valid and invalid usernames`() = runTest {
-            val result = Mojank.usernamesToSimpleProfiles(listOf(sensei.name, spaceship.name))
+            val result = mojank.usernamesToSimpleProfiles(listOf(sensei.name, spaceship.name))
             assert(result.isPartial && result.get().size == 1 && result.get().first() == sensei && result.isConclusive)
         }
 
         @Test
         fun `with invalid usernames`() = runTest {
-            val result = Mojank.usernamesToSimpleProfiles(listOf(spaceship.name, happy.name))
+            val result = mojank.usernamesToSimpleProfiles(listOf(spaceship.name, happy.name))
             assert(result.isFailure && result.isConclusive)
         }
 
         @Test
         fun `with no usernames`() = runTest {
-            val result = Mojank.usernamesToSimpleProfiles(listOf())
+            val result = mojank.usernamesToSimpleProfiles(listOf())
             assert(result.isSuccess && result.get().isEmpty())
         }
     }
@@ -86,13 +89,13 @@ class MojankTests {
     inner class UUIDToProfileTests {
         @Test
         fun `with valid username`() = runTest {
-            val result = Mojank.uuidToProfile(sensei.id)
+            val result = mojank.uuidToProfile(sensei.id)
             assert(result.isSuccess && result.get().toSimple() == sensei)
         }
 
         @Test
         fun `with invalid username`() = runTest {
-            val result = Mojank.uuidToProfile(spaceship.id)
+            val result = mojank.uuidToProfile(spaceship.id)
             assert(!result.isSuccessOrPartial && result.isConclusive)
         }
     }
@@ -102,7 +105,7 @@ class MojankTests {
     inner class AttemptTests {
         @Test
         fun `with username request`() = runTest {
-            val result = Mojank.attempt { usernameToUUID(sensei.name) }
+            val result = mojank.attempt { usernameToUUID(sensei.name) }
             assert(result.isSuccess && result.get() == sensei.id)
         }
     }

@@ -40,8 +40,12 @@ import kotlin.time.Duration.Companion.minutes
  * [wiki page](https://wiki.vg/Mojang_API).
  *
  * @param client The [HttpClient] to use for api requests.
+ * @param endpoints The endpoints to target.
  */
-public open class Mojank(private val client: HttpClient = HttpClient(CIO)) {
+public open class Mojank(
+    private val client: HttpClient = HttpClient(CIO),
+    private val endpoints: MojankEndpoints = MojankEndpoints.DEFAULT
+) {
     /**
      * Attempts an action a given number of times until the
      * result is conclusive.
@@ -89,7 +93,7 @@ public open class Mojank(private val client: HttpClient = HttpClient(CIO)) {
      */
     public open suspend fun usernameToSimpleProfile(username: String): MojankResult<SimpleMojankProfile> {
         return request("Couldn't find any profile with that name") {
-            client.get("https://api.mojang.com/users/profiles/minecraft/$username")
+            client.get(endpoints.usernameToSimpleProfile.invoke(username))
         }
     }
 
@@ -182,7 +186,7 @@ public open class Mojank(private val client: HttpClient = HttpClient(CIO)) {
      */
     public open suspend fun uuidToProfile(uuid: UUID): MojankResult<MojankProfile> {
         return request("Couldn't find any profile with that uuid") {
-            client.get("https://sessionserver.mojang.com/session/minecraft/profile/$uuid?unsigned=false")
+            client.get(endpoints.uuidToProfile.invoke(uuid))
         }
     }
 
@@ -203,7 +207,7 @@ public open class Mojank(private val client: HttpClient = HttpClient(CIO)) {
                 }
             },
             request = {
-                client.post("https://api.minecraftservices.com/minecraft/profile/lookup/bulk/byname") {
+                client.post(endpoints.usernameToSimpleProfileBulk) {
                     contentType(ContentType.Application.Json)
                     setBody(Json.encodeToString(usernames))
                 }
@@ -264,8 +268,13 @@ public open class Mojank(private val client: HttpClient = HttpClient(CIO)) {
  *
  * @param duration The duration to cache the results for, by default 20 minutes.
  * @param client The [HttpClient] to use it for api requests.
+ * @param endpoints The endpoints to target.
  */
-public open class CachedMojank(duration: Duration = 20.minutes, client: HttpClient = HttpClient(CIO)): Mojank(client) {
+public open class CachedMojank(
+    duration: Duration = 20.minutes,
+    client: HttpClient = HttpClient(CIO),
+    endpoints: MojankEndpoints = MojankEndpoints.DEFAULT
+): Mojank(client, endpoints) {
     private val usernameToSimpleProfile = Cache.Builder<String, MojankResult<SimpleMojankProfile>>()
         .expireAfterWrite(duration).build()
     private val usernameToProfile = Cache.Builder<String, MojankResult<MojankProfile>>()
